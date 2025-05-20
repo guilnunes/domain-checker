@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Domain Availability Checker</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -42,8 +43,31 @@
                             </div>
                         </form>
                         
+                        <!-- Progress Tracker -->
+                        <div id="progressContainer" class="mt-4 d-none">
+                            <h5>Progress: <span id="progressStatus">Starting...</span></h5>
+                            <div class="progress mb-3">
+                                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Error Console -->
+                        <div id="errorConsole" class="mt-4 d-none">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h5 class="text-danger mb-0"><i class="bi bi-exclamation-triangle-fill"></i> Error Console</h5>
+                                <button id="clearErrorsBtn" class="btn btn-sm btn-outline-danger">Clear</button>
+                            </div>
+                            <div id="errorList" class="error-console p-3"></div>
+                        </div>
+                        
+                        <!-- Results Container -->
                         <div id="resultsContainer" class="mt-5 d-none">
-                            <h2 class="mb-4">Results</h2>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h2 class="mb-0">Results</h2>
+                                <button id="downloadPdfBtn" class="btn btn-success">
+                                    <i class="bi bi-file-earmark-pdf"></i> Download as PDF
+                                </button>
+                            </div>
                             <div id="resultsContent"></div>
                         </div>
                     </div>

@@ -46,6 +46,12 @@ body {
     border-left: 5px solid #dc3545;
 }
 
+.domain-error {
+    background-color: #fff3cd;
+    color: #856404;
+    border-left: 5px solid #ffc107;
+}
+
 .suggestions-container {
     background-color: #e2e3e5;
     border-radius: 0 0 10px 10px;
@@ -60,6 +66,44 @@ body {
     display: inline-block;
     font-size: 0.9rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.error-console {
+    background-color: #f8f9fa;
+    border: 1px solid #dc3545;
+    border-radius: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.error-item {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    color: #dc3545;
+}
+
+.error-item:last-child {
+    border-bottom: none;
+}
+
+#progressContainer {
+    transition: all 0.3s ease;
+}
+
+#progressBar {
+    transition: width 0.5s ease;
+    background: linear-gradient(135deg, #4a6bff 0%, #2541b2 100%);
+}
+
+#downloadPdfBtn {
+    transition: all 0.2s ease;
+}
+
+#downloadPdfBtn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
 @media (max-width: 768px) {
