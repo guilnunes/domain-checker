@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domain Availability Checker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h1 class="text-center mb-0">Domain Availability Checker</h1>
+                    </div>
+                    <div class="card-body">
+                        <form id="domainForm">
+                            <div class="mb-4">
+                                <label for="brandNames" class="form-label">Enter Brand Names (one per line):</label>
+                                <textarea class="form-control" id="brandNames" name="brand_names" rows="5" placeholder="Enter your brand names here, one per line. Example:&#10;mybrand&#10;coolcompany&#10;awesomeproduct" required></textarea>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label class="form-label">Select TLDs to check:</label>
+                                <div class="tld-options">
+                                    {% for tld in tlds %}
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="checkbox" name="tlds" id="tld{{ loop.index }}" value="{{ tld }}" checked>
+                                        <label class="form-check-label" for="tld{{ loop.index }}">{{ tld }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg" id="checkButton">
+                                    <span class="spinner-border spinner-border-sm d-none" id="loadingSpinner" role="status" aria-hidden="true"></span>
+                                    Check Domain Availability
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <div id="resultsContainer" class="mt-5 d-none">
+                            <h2 class="mb-4">Results</h2>
+                            <div id="resultsContent"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
