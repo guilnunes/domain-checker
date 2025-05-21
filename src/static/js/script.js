@@ -30,60 +30,80 @@ document.addEventListener('DOMContentLoaded', function() {
         // Get form data
         const formData = new FormData(domainForm);
         
-        // Create EventSource for server-sent events
-        const eventSource = new EventSource('/stream-check', {
+        // Send form data to server
+        fetch('/stream-check', {
             method: 'POST',
             body: formData
-        });
-        
-        // Handle progress updates
-        eventSource.addEventListener('message', function(event) {
-            const data = JSON.parse(event.data);
-            
-            // Update progress
-            if (data.progress !== undefined) {
-                progressBar.style.width = data.progress + '%';
-                progressBar.setAttribute('aria-valuenow', data.progress);
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
             }
             
-            // Update status message
-            if (data.status) {
-                progressStatus.textContent = data.status;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            function processStream() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        return;
+                    }
+                    
+                    const text = decoder.decode(value, { stream: true });
+                    const lines = text.split('\n\n');
+                    
+                    lines.forEach(line => {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                // Update progress
+                                if (data.progress !== undefined) {
+                                    progressBar.style.width = data.progress + '%';
+                                    progressBar.setAttribute('aria-valuenow', data.progress);
+                                }
+                                
+                                // Update status message
+                                if (data.status) {
+                                    progressStatus.textContent = data.status;
+                                }
+                                
+                                // Handle errors
+                                if (data.error) {
+                                    showError(data.error);
+                                }
+                                
+                                // Handle completion
+                                if (data.results) {
+                                    results = data.results; // Store results for PDF generation
+                                    displayResults(data.results);
+                                    
+                                    // Show results container
+                                    resultsContainer.classList.remove('d-none');
+                                    
+                                    // Scroll to results
+                                    resultsContainer.scrollIntoView({ behavior: 'smooth' });
+                                    
+                                    // Hide loading spinner and update progress
+                                    loadingSpinner.classList.add('d-none');
+                                    checkButton.disabled = false;
+                                    progressStatus.textContent = 'Completed';
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    });
+                    
+                    return processStream();
+                });
             }
             
-            // Handle errors
-            if (data.error) {
-                showError(data.error);
-            }
-            
-            // Handle completion
-            if (data.results) {
-                results = data.results; // Store results for PDF generation
-                displayResults(data.results);
-                
-                // Show results container
-                resultsContainer.classList.remove('d-none');
-                
-                // Scroll to results
-                resultsContainer.scrollIntoView({ behavior: 'smooth' });
-                
-                // Close the event source
-                eventSource.close();
-                
-                // Hide loading spinner and update progress
-                loadingSpinner.classList.add('d-none');
-                checkButton.disabled = false;
-                progressStatus.textContent = 'Completed';
-            }
-        });
-        
-        // Handle errors
-        eventSource.addEventListener('error', function(event) {
-            console.error('EventSource error:', event);
+            return processStream();
+        })
+        .catch(error => {
+            console.error('Error:', error);
             showError('Connection error. Please try again.');
-            
-            // Close the event source
-            eventSource.close();
             
             // Hide loading spinner
             loadingSpinner.classList.add('d-none');
@@ -170,6 +190,49 @@ document.addEventListener('DOMContentLoaded', function() {
         errorList.scrollTop = errorList.scrollHeight;
     }
     
+    function getConfidenceClass(confidence) {
+        if (confidence >= 0.8) return 'high-confidence';
+        if (confidence >= 0.5) return 'medium-confidence';
+        return 'low-confidence';
+    }
+    
+    function getStatusClass(status, conflicting) {
+        if (status === 'error') return 'domain-error';
+        if (status === 'available') return 'domain-available';
+        if (status === 'unavailable') return 'domain-unavailable';
+        if (status && status.includes('uncertain')) return 'domain-uncertain';
+        if (conflicting) return 'domain-conflict';
+        return 'domain-unavailable';
+    }
+    
+    function getStatusText(status, available) {
+        if (status === 'error') return 'Error';
+        if (status === 'available') return 'Available';
+        if (status === 'unavailable') return 'Unavailable';
+        if (status && status.includes('uncertain')) return 'Uncertain';
+        if (status && status.includes('conflicted')) return available ? 'Available (Conflicted)' : 'Unavailable (Conflicted)';
+        return available ? 'Available' : 'Unavailable';
+    }
+    
+    function formatSourceBadges(sources) {
+        if (!sources || sources.length === 0) return 'No sources';
+        
+        let html = '';
+        sources.forEach(source => {
+            if (source.error) return; // Skip sources with errors
+            
+            const sourceClass = `source-${source.source.toLowerCase()}`;
+            const confidenceClass = getConfidenceClass(source.confidence);
+            
+            html += `<span class="badge source-badge ${sourceClass}" 
+                      title="${source.source}: ${Math.round(source.confidence * 100)}% confidence">
+                      ${source.source}
+                    </span>`;
+        });
+        
+        return html || 'No valid sources';
+    }
+    
     function displayResults(results) {
         let html = '';
         
@@ -197,22 +260,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 `;
                 
                 result.domains.forEach(domain => {
-                    let statusClass = 'domain-unavailable';
-                    let statusText = 'Unavailable';
-                    
-                    if (domain.available) {
-                        statusClass = 'domain-available';
-                        statusText = 'Available';
-                    } else if (domain.error) {
-                        statusClass = 'domain-error';
-                        statusText = 'Error';
-                    }
+                    const statusClass = getStatusClass(domain.status, domain.conflicting_results);
+                    const statusText = getStatusText(domain.status, domain.available);
+                    const confidenceClass = getConfidenceClass(domain.confidence);
+                    const confidencePercent = Math.round((domain.confidence || 0) * 100);
                     
                     html += `
                         <div class="card ${statusClass} domain-card mb-2">
-                            <div class="card-body d-flex justify-content-between align-items-center py-2">
-                                <span class="domain-name fw-bold">${domain.domain}</span>
-                                <span class="domain-status">${statusText}</span>
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center py-2">
+                                    <span class="domain-name fw-bold">${domain.domain}</span>
+                                    <span class="domain-status">${statusText}</span>
+                                </div>
+                                
+                                <div class="mt-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">Confidence:</small>
+                                        <small class="confidence-value ${confidenceClass}">${confidencePercent}%</small>
+                                    </div>
+                                    <div class="confidence-meter">
+                                        <div class="confidence-level confidence-level-${confidenceClass}" style="width: ${confidencePercent}%"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-2">
+                                    <small class="text-muted">Sources:</small>
+                                    <div class="mt-1">
+                                        ${formatSourceBadges(domain.sources)}
+                                        ${domain.conflicting_results ? '<span class="source-conflict-indicator"><i class="bi bi-exclamation-triangle-fill" title="Sources disagree on availability"></i></span>' : ''}
+                                    </div>
+                                </div>
                             </div>
                             ${domain.error ? `<div class="card-footer py-1 small text-muted">${domain.error}</div>` : ''}
                         </div>

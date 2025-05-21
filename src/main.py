@@ -3,14 +3,22 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # DON'T CHANGE THIS !!!
 
 from flask import Flask, render_template, request, jsonify, Response
-import whois
-import time
-import re
+import asyncio
 import json
 import traceback
 from io import BytesIO
 from weasyprint import HTML, CSS
 from datetime import datetime
+import logging
+
+# Import our domain checker modules
+from src.domain_checker import DomainChecker, normalize_brand_name, DomainSuggestionGenerator
+from src.registrar_apis import create_godaddy_provider
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'domain_checker_secret_key'
@@ -18,10 +26,23 @@ app.config['SECRET_KEY'] = 'domain_checker_secret_key'
 # List of TLDs to check
 DEFAULT_TLDS = ['.com', '.net', '.org', '.io', '.ai', '.com.br']
 
+# Initialize the domain checker
+domain_checker = DomainChecker()
+
+# Try to add GoDaddy provider if credentials are available
+godaddy_provider = create_godaddy_provider()
+if godaddy_provider:
+    domain_checker.add_provider(godaddy_provider)
+    logger.info("GoDaddy API provider added to domain checker")
+else:
+    logger.warning("GoDaddy API provider not available - using WHOIS only")
+
 @app.route('/')
 def index():
     """Render the main page with the domain input form."""
-    return render_template('index.html', tlds=DEFAULT_TLDS)
+    # Get the list of active providers
+    providers = [p.source_name for p in domain_checker.providers]
+    return render_template('index.html', tlds=DEFAULT_TLDS, providers=providers)
 
 @app.route('/check', methods=['POST'])
 def check_domains():
@@ -67,12 +88,20 @@ def check_domains():
                     # Send progress update for domain check
                     yield f"data: {json.dumps({'progress': progress_percent, 'status': f'Checking domain: {domain}'})}\n\n"
                     
-                    available = check_domain_availability(domain)
+                    # Use the multi-source domain checker
+                    result = asyncio.run(domain_checker.check_domain(domain))
                     
-                    brand_result['domains'].append({
+                    # Add to results
+                    domain_result = {
                         'domain': domain,
-                        'available': available
-                    })
+                        'available': result['available'],
+                        'confidence': result['confidence'],
+                        'status': result['status'],
+                        'sources': result['sources'],
+                        'conflicting_results': result['conflicting_results']
+                    }
+                    
+                    brand_result['domains'].append(domain_result)
                     
                     current_check += 1
                     
@@ -85,14 +114,17 @@ def check_domains():
                     brand_result['domains'].append({
                         'domain': f"{normalized_brand}{tld}",
                         'available': False,
+                        'confidence': 0.0,
+                        'status': 'error',
                         'error': str(e)
                     })
             
             # Generate suggestions for unavailable domains
-            unavailable_domains = [d for d in brand_result['domains'] if not d['available']]
+            unavailable_domains = [d for d in brand_result['domains'] if not d.get('available')]
             if unavailable_domains:
                 yield f"data: {json.dumps({'status': f'Generating suggestions for {brand}'})}\n\n"
-                brand_result['suggestions'] = generate_domain_suggestions(normalized_brand, selected_tlds)
+                brand_result['suggestions'] = DomainSuggestionGenerator.generate_suggestions(
+                    normalized_brand, selected_tlds)
             
             results.append(brand_result)
             
@@ -139,6 +171,13 @@ def generate_pdf():
                 .domain-table th {{ background-color: #f2f2f2; }}
                 .available {{ color: green; }}
                 .unavailable {{ color: red; }}
+                .uncertain {{ color: orange; }}
+                .error {{ color: #ff6b6b; }}
+                .confidence {{ font-size: 12px; color: #666; }}
+                .high-confidence {{ font-weight: bold; }}
+                .medium-confidence {{ font-style: italic; }}
+                .low-confidence {{ font-style: italic; color: #999; }}
+                .sources {{ font-size: 11px; color: #666; margin-top: 3px; }}
                 .suggestions-title {{ font-weight: bold; margin-top: 15px; }}
                 .suggestions {{ margin-top: 5px; }}
                 .suggestion-item {{ display: inline-block; background-color: #f8f9fa; padding: 5px 10px; 
@@ -162,19 +201,59 @@ def generate_pdf():
                     <tr>
                         <th>Domain</th>
                         <th>Status</th>
+                        <th>Confidence</th>
+                        <th>Sources</th>
                     </tr>
             """
             
             for domain in domains:
-                status_class = "available" if domain['available'] else "unavailable"
-                status_text = "Available" if domain['available'] else "Unavailable"
+                # Determine status class
+                status_class = "unavailable"
+                status_text = "Unavailable"
+                
+                if domain.get('status') == 'error':
+                    status_class = "error"
+                    status_text = "Error"
+                elif domain.get('available'):
+                    status_class = "available"
+                    status_text = "Available"
+                elif domain.get('status') and 'uncertain' in domain.get('status'):
+                    status_class = "uncertain"
+                    status_text = "Uncertain"
+                
+                # Determine confidence class
+                confidence = domain.get('confidence', 0.0)
+                confidence_class = "low-confidence"
+                if confidence >= 0.8:
+                    confidence_class = "high-confidence"
+                elif confidence >= 0.5:
+                    confidence_class = "medium-confidence"
+                
+                # Format confidence as percentage
+                confidence_text = f"{int(confidence * 100)}%"
+                
+                # Format sources
+                sources = domain.get('sources', [])
+                sources_text = ", ".join([s.get('source', 'Unknown') for s in sources if s.get('error') is None])
+                if not sources_text:
+                    sources_text = "No valid sources"
                 
                 html_content += f"""
                     <tr>
                         <td>{domain['domain']}</td>
                         <td class="{status_class}">{status_text}</td>
+                        <td class="confidence {confidence_class}">{confidence_text}</td>
+                        <td class="sources">{sources_text}</td>
                     </tr>
                 """
+                
+                # Add error message if present
+                if domain.get('error'):
+                    html_content += f"""
+                    <tr>
+                        <td colspan="4" class="error">Error: {domain['error']}</td>
+                    </tr>
+                    """
             
             html_content += """
                 </table>
@@ -220,67 +299,6 @@ def generate_pdf():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': f'Error generating PDF: {str(e)}'}), 500
-
-def normalize_brand_name(brand_name):
-    """Normalize brand name for domain use (remove spaces, special chars, etc.)"""
-    # Convert to lowercase
-    normalized = brand_name.lower()
-    
-    # Remove special characters and spaces
-    normalized = re.sub(r'[^a-z0-9]', '', normalized)
-    
-    return normalized
-
-def check_domain_availability(domain):
-    """Check if a domain is available using WHOIS."""
-    try:
-        # Add a small delay to avoid rate limiting
-        time.sleep(0.5)
-        
-        # Query WHOIS
-        domain_info = whois.whois(domain)
-        
-        # If the domain doesn't exist, it's available
-        if domain_info.status is None or domain_info.domain_name is None:
-            return True
-        
-        return False
-    except Exception as e:
-        # Log the error but don't fail the entire process
-        error_msg = f"Error checking domain {domain}: {str(e)}"
-        print(error_msg)
-        # Re-raise to be caught by the caller
-        raise
-
-def generate_domain_suggestions(brand, selected_tlds):
-    """Generate alternative domain suggestions."""
-    suggestions = []
-    
-    # Prefixes to try
-    prefixes = ['get', 'try', 'use', 'my', 'the']
-    
-    # Suffixes to try
-    suffixes = ['app', 'site', 'online', 'digital', 'web']
-    
-    # Generate suggestions with prefixes
-    for prefix in prefixes:
-        for tld in selected_tlds:
-            suggestions.append(f"{prefix}{brand}{tld}")
-    
-    # Generate suggestions with suffixes
-    for suffix in suffixes:
-        for tld in selected_tlds:
-            suggestions.append(f"{brand}{suffix}{tld}")
-    
-    # Add hyphenated version if brand is long enough
-    if len(brand) > 5:
-        middle = len(brand) // 2
-        hyphenated = f"{brand[:middle]}-{brand[middle:]}"
-        for tld in selected_tlds:
-            suggestions.append(f"{hyphenated}{tld}")
-    
-    # Limit to 10 suggestions to avoid overwhelming the user
-    return suggestions[:10]
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

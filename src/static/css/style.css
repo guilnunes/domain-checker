@@ -46,10 +46,23 @@ body {
     border-left: 5px solid #dc3545;
 }
 
-.domain-error {
+.domain-uncertain {
     background-color: #fff3cd;
     color: #856404;
     border-left: 5px solid #ffc107;
+}
+
+.domain-error {
+    background-color: #f1f1f1;
+    color: #6c757d;
+    border-left: 5px solid #6c757d;
+}
+
+.domain-conflict {
+    background-color: #e2e3e5;
+    color: #383d41;
+    border-left: 5px solid #6c757d;
+    border-right: 5px solid #ffc107;
 }
 
 .suggestions-container {
@@ -104,6 +117,101 @@ body {
 #downloadPdfBtn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.confidence-legend {
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid #e9ecef;
+}
+
+.confidence-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.confidence-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.high-confidence {
+    background-color: #28a745;
+}
+
+.medium-confidence {
+    background-color: #17a2b8;
+}
+
+.low-confidence {
+    background-color: #6c757d;
+}
+
+.conflict {
+    background: linear-gradient(135deg, #dc3545 0%, #ffc107 100%);
+}
+
+.confidence-meter {
+    height: 6px;
+    border-radius: 3px;
+    margin-top: 5px;
+    background-color: #e9ecef;
+    overflow: hidden;
+}
+
+.confidence-level {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.confidence-level-high {
+    background-color: #28a745;
+}
+
+.confidence-level-medium {
+    background-color: #17a2b8;
+}
+
+.confidence-level-low {
+    background-color: #6c757d;
+}
+
+.sources-info {
+    background-color: #e9f7fb;
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid #d1ecf1;
+}
+
+.source-badge {
+    font-size: 0.8rem;
+    padding: 3px 8px;
+    border-radius: 10px;
+    margin-right: 5px;
+}
+
+.source-godaddy {
+    background-color: #1DADFE;
+    color: white;
+}
+
+.source-whois {
+    background-color: #6c757d;
+    color: white;
+}
+
+.source-namecheap {
+    background-color: #FF5100;
+    color: white;
+}
+
+.source-conflict-indicator {
+    color: #ffc107;
+    margin-left: 5px;
 }
 
 @media (max-width: 768px) {
