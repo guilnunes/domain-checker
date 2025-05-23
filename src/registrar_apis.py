@@ -10,6 +10,15 @@ import logging
 from typing import Dict, List, Any, Optional
 from .domain_checker import DomainSourceProvider
 
+# Import dotenv for secure credential loading
+try:
+    from dotenv import load_dotenv
+    # Load environment variables from .env file if it exists
+    load_dotenv()
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -167,16 +176,22 @@ class NamecheapProvider(DomainSourceProvider):
 def create_godaddy_provider() -> Optional[GoDaddyProvider]:
     """
     Create a GoDaddy provider using environment variables for credentials.
+    Environment variables can be set directly or loaded from a .env file.
     
     Returns:
         GoDaddyProvider instance or None if credentials are not available
     """
+    # If dotenv is available, it was already loaded at module import
+    if DOTENV_AVAILABLE:
+        logger.info("Dotenv support is enabled for credential loading")
+    
     api_key = os.environ.get('GODADDY_API_KEY')
     api_secret = os.environ.get('GODADDY_API_SECRET')
     
     if not api_key or not api_secret:
-        logger.warning("GoDaddy API credentials not found in environment variables")
+        logger.warning("GoDaddy API credentials not found in environment variables or .env file")
         return None
     
     use_production = os.environ.get('GODADDY_USE_PRODUCTION', 'true').lower() == 'true'
+    logger.info(f"Creating GoDaddy provider with {'production' if use_production else 'OTE'} environment")
     return GoDaddyProvider(api_key, api_secret, use_production)
