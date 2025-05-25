@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', function() {
         checkButton.textContent = 'Checking...';
         
         // Start domain checking
-        checkDomains(new FormData(domainForm));
+        checkDomainsWithFetchStream(new FormData(domainForm));
     });
     
     // Clear console button
@@ -64,74 +64,89 @@ document.addEventListener('DOMContentLoaded', function() {
     downloadPdfButton.addEventListener('click', function() {
         generatePdf(results);
     });
-    
-    // Function to check domains using server-sent events
-    function checkDomains(formData) {
-        // Create a POST request to the stream-check endpoint
-        fetch('/stream-check', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => {
+
+    // Function to check domains using fetch and ReadableStream
+    async function checkDomainsWithFetchStream(formData) {
+        try {
+            const response = await fetch('/stream-check', {
+                method: 'POST',
+                body: formData
+            });
+
             if (!response.ok) {
                 throw new Error(`Server returned ${response.status}: ${response.statusText}`);
             }
-            
-            const eventSource = new EventSource('/stream-check');
-            
-            eventSource.addEventListener('message', function(e) {
-                const data = JSON.parse(e.data);
-                
-                // Handle progress updates
-                if (data.progress !== undefined) {
-                    updateProgress(data.progress);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    logToConsole('info', 'Stream finished.');
+                    break;
                 }
-                
-                // Handle status updates
-                if (data.status) {
-                    updateStatus(data.status);
-                    logToConsole('info', data.status);
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep the last partial message in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const jsonData = line.substring(6); // Remove 'data: '
+                            const data = JSON.parse(jsonData);
+                            processStreamData(data);
+                        } catch (e) {
+                            logToConsole('error', `Failed to parse JSON: ${line}`);
+                            console.error('JSON Parse Error:', e, 'Data:', line);
+                        }
+                    }
                 }
-                
-                // Handle errors
-                if (data.error) {
-                    errors.push(data.error);
-                    updateErrorSection();
-                    logToConsole('error', data.error);
-                }
-                
-                // Handle results
-                if (data.results) {
-                    results = data.results;
-                    displayResults(results);
-                    eventSource.close();
-                    
-                    // Re-enable form
-                    checkButton.disabled = false;
-                    checkButton.textContent = 'Check Availability';
-                    
-                    // Log completion
-                    logToConsole('success', 'Domain checking completed.');
-                }
-            });
-            
-            eventSource.addEventListener('error', function() {
-                eventSource.close();
-                showError('Connection to server lost. Please try again.');
-                
-                // Re-enable form
-                checkButton.disabled = false;
-                checkButton.textContent = 'Check Availability';
-            });
-        })
-        .catch(error => {
+            }
+
+        } catch (error) {
             showError(`Error: ${error.message}`);
             logToConsole('error', `Error: ${error.message}`);
+            // Re-enable form
+            checkButton.disabled = false;
+            checkButton.textContent = 'Check Availability';
+        }
+    }
+
+    // Function to process data received from the stream
+    function processStreamData(data) {
+        // Handle progress updates
+        if (data.progress !== undefined) {
+            updateProgress(data.progress);
+        }
+        
+        // Handle status updates
+        if (data.status) {
+            updateStatus(data.status);
+            logToConsole('info', data.status);
+        }
+        
+        // Handle errors
+        if (data.error) {
+            errors.push(data.error);
+            updateErrorSection();
+            logToConsole('error', data.error);
+        }
+        
+        // Handle final results
+        if (data.results) {
+            results = data.results;
+            displayResults(results);
             
             // Re-enable form
             checkButton.disabled = false;
             checkButton.textContent = 'Check Availability';
-        });
+            
+            // Log completion
+            logToConsole('success', 'Domain checking completed.');
+        }
     }
     
     // Function to update progress bar
@@ -396,3 +411,4 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
