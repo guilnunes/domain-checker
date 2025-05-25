@@ -140,7 +140,102 @@ def check_domains():
 @app.route('/stream-check', methods=['POST'])
 def stream_check_domains():
     """Stream domain availability check results with progress updates."""
-    return Response(check_domains(), mimetype='text/event-stream')
+    # Capture form data before starting the stream
+    form_data = dict(request.form)
+    selected_tlds = request.form.getlist('tlds')
+    
+    def generate():
+        # Use the captured form data here
+        brand_names = form_data.get('brand_names', '').strip().split('\n')
+        
+        if not brand_names or not selected_tlds:
+            yield f"data: {json.dumps({'error': 'Please provide brand names and select at least one TLD'})}\n\n"
+            return
+            
+        # Clean brand names (remove empty lines and whitespace)
+        brand_names = [name.strip() for name in brand_names if name.strip()]
+        
+        # Initialize progress tracking
+        total_checks = len(brand_names) * len(selected_tlds)
+        current_check = 0
+        
+        # Check domains and get results
+        results = []
+        errors = []
+        
+        for brand_idx, brand in enumerate(brand_names):
+            try:
+                # Send progress update
+                progress_percent = int((brand_idx / len(brand_names)) * 100)
+                yield f"data: {json.dumps({'progress': progress_percent, 'status': f'Processing brand: {brand}'})}\n\n"
+                
+                brand_result = {
+                    'brand': brand,
+                    'domains': [],
+                    'suggestions': []
+                }
+                
+                # Normalize brand name for domain use
+                normalized_brand = normalize_brand_name(brand)
+                
+                # Check each selected TLD
+                for tld_idx, tld in enumerate(selected_tlds):
+                    try:
+                        domain = f"{normalized_brand}{tld}"
+                        
+                        # Send progress update for domain check
+                        yield f"data: {json.dumps({'progress': progress_percent, 'status': f'Checking domain: {domain}'})}\n\n"
+                        
+                        # Use the multi-source domain checker
+                        result = asyncio.run(domain_checker.check_domain(domain))
+                        
+                        # Add to results
+                        domain_result = {
+                            'domain': domain,
+                            'available': result['available'],
+                            'confidence': result['confidence'],
+                            'status': result['status'],
+                            'sources': result['sources'],
+                            'conflicting_results': result['conflicting_results']
+                        }
+                        
+                        brand_result['domains'].append(domain_result)
+                        
+                        current_check += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Error checking domain {normalized_brand}{tld}: {str(e)}"
+                        errors.append(error_msg)
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                        # Add domain with error status
+                        brand_result['domains'].append({
+                            'domain': f"{normalized_brand}{tld}",
+                            'available': False,
+                            'confidence': 0.0,
+                            'status': 'error',
+                            'error': str(e)
+                        })
+                
+                # Generate suggestions for unavailable domains
+                unavailable_domains = [d for d in brand_result['domains'] if not d.get('available')]
+                if unavailable_domains:
+                    yield f"data: {json.dumps({'status': f'Generating suggestions for {brand}'})}\n\n"
+                    brand_result['suggestions'] = DomainSuggestionGenerator.generate_suggestions(
+                        normalized_brand, selected_tlds)
+                
+                results.append(brand_result)
+                
+            except Exception as e:
+                error_msg = f"Error processing brand {brand}: {str(e)}"
+                errors.append(error_msg)
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                traceback.print_exc()
+        
+        # Send completion status
+        yield f"data: {json.dumps({'progress': 100, 'status': 'Completed', 'results': results, 'errors': errors})}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/generate-pdf', methods=['POST'])
 def generate_pdf():
