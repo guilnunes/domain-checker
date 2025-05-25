@@ -137,6 +137,10 @@ class DomainChecker:
         # Normalize domain
         domain = self._normalize_domain(domain)
         
+        # Log providers being used
+        provider_names = [p.source_name for p in self.providers]
+        logger.info(f"Checking domain {domain} with providers: {', '.join(provider_names)}")
+        
         # Check with all providers in parallel
         tasks = [provider.check_availability(domain) for provider in self.providers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -155,12 +159,16 @@ class DomainChecker:
                 })
             else:
                 processed_results.append(result)
+                logger.info(f"Result from {self.providers[i].source_name} for {domain}: available={result.get('available')}, confidence={result.get('confidence')}, error={result.get('error')}")
         
         # Reconcile the results
         reconciled = self._reconcile_results(processed_results)
         
         # Add all source results for transparency
         reconciled['sources'] = processed_results
+        
+        # Log the reconciled result
+        logger.info(f"Reconciled result for {domain}: {reconciled}")
         
         return reconciled
     
@@ -208,10 +216,12 @@ class DomainChecker:
             reconciled['available'] = None
             reconciled['confidence'] = 0.0
             reconciled['status'] = 'unknown'
+            logger.warning(f"All sources had errors, cannot determine availability")
             return reconciled
         
         # Filter out error results
         valid_results = [r for r in results if r['error'] is None]
+        logger.info(f"Valid results for reconciliation: {[(r['source'], r['available']) for r in valid_results]}")
         
         # Check if all valid results agree
         availabilities = [r['available'] for r in valid_results]
@@ -226,13 +236,18 @@ class DomainChecker:
                                      for r in valid_results)
             reconciled['confidence'] = weighted_confidence / total_weight if total_weight > 0 else 0.5
             reconciled['status'] = 'available' if reconciled['available'] else 'unavailable'
+            logger.info(f"All sources agree: {reconciled['status']} with confidence {reconciled['confidence']}")
         else:
             # Sources disagree - prioritize registrar APIs over WHOIS
             reconciled['conflicting_results'] = True
+            logger.info(f"Sources disagree on availability")
             
             # Group by source type
             registrar_results = [r for r in valid_results if r['source'] != 'WHOIS']
             whois_results = [r for r in valid_results if r['source'] == 'WHOIS']
+            
+            logger.info(f"Registrar results: {[(r['source'], r['available']) for r in registrar_results]}")
+            logger.info(f"WHOIS results: {[(r['source'], r['available']) for r in whois_results]}")
             
             if registrar_results:
                 # Prioritize registrar API results
@@ -244,11 +259,14 @@ class DomainChecker:
                 for i, avail in enumerate(registrar_availabilities):
                     weighted_votes[avail] = weighted_votes.get(avail, 0) + registrar_weights[i]
                 
+                logger.info(f"Weighted votes: {weighted_votes}")
+                
                 # Get the availability with the highest weighted vote
                 reconciled['available'] = max(weighted_votes.items(), key=lambda x: x[1])[0]
                 reconciled['confidence'] = 0.7  # Medium-high confidence for registrar API with conflicts
                 reconciled['status'] = 'available' if reconciled['available'] else 'unavailable'
                 reconciled['status'] += '_conflicted'
+                logger.info(f"Reconciled based on registrar APIs: {reconciled['status']} with confidence {reconciled['confidence']}")
             else:
                 # Only WHOIS results with conflicts (unusual case)
                 # Take the majority vote
@@ -259,6 +277,7 @@ class DomainChecker:
                 reconciled['confidence'] = 0.5  # Medium confidence for conflicting WHOIS
                 reconciled['status'] = 'available' if reconciled['available'] else 'unavailable'
                 reconciled['status'] += '_uncertain'
+                logger.info(f"Reconciled based on WHOIS majority: {reconciled['status']} with confidence {reconciled['confidence']}")
         
         return reconciled
     

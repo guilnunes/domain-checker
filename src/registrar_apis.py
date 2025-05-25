@@ -49,6 +49,8 @@ class GoDaddyProvider(DomainSourceProvider):
         # Validate credentials
         if not api_key or not api_secret:
             logger.warning("GoDaddy API credentials not provided or incomplete")
+        else:
+            logger.info(f"GoDaddy provider initialized with API key: {api_key[:5]}... and base URL: {self._base_url}")
     
     @property
     def source_name(self) -> str:
@@ -70,9 +72,13 @@ class GoDaddyProvider(DomainSourceProvider):
         
         # Check if credentials are available
         if not self._api_key or not self._api_secret:
-            result['error'] = "GoDaddy API credentials not configured"
+            error_msg = "GoDaddy API credentials not configured"
+            logger.error(error_msg)
+            result['error'] = error_msg
             result['confidence'] = 0.0
             return result
+        
+        logger.info(f"Checking domain availability via GoDaddy API: {domain}")
         
         try:
             # Prepare API request
@@ -85,48 +91,76 @@ class GoDaddyProvider(DomainSourceProvider):
             url = f"{self._base_url}/v1/domains/available"
             params = {'domain': domain}
             
+            logger.debug(f"Making GoDaddy API request to {url} with params {params}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, params=params) as response:
+                    response_status = response.status
+                    response_text = await response.text()
+                    logger.info(f"GoDaddy API response for {domain}: Status {response_status}")
+                    logger.debug(f"GoDaddy API response body: {response_text}")
+                    
                     # Handle rate limiting
-                    if response.status == 429:
-                        result['error'] = "Rate limit exceeded for GoDaddy API"
+                    if response_status == 429:
+                        error_msg = "Rate limit exceeded for GoDaddy API"
+                        logger.error(error_msg)
+                        result['error'] = error_msg
                         result['confidence'] = 0.0
                         return result
                     
                     # Handle authentication errors
-                    if response.status == 401:
-                        result['error'] = "Authentication failed for GoDaddy API"
+                    if response_status == 401:
+                        error_msg = "Authentication failed for GoDaddy API"
+                        logger.error(error_msg)
+                        result['error'] = error_msg
                         result['confidence'] = 0.0
                         return result
                     
                     # Handle other errors
-                    if response.status != 200:
-                        result['error'] = f"GoDaddy API error: {response.status} - {await response.text()}"
+                    if response_status != 200:
+                        error_msg = f"GoDaddy API error: {response_status} - {response_text}"
+                        logger.error(error_msg)
+                        result['error'] = error_msg
                         result['confidence'] = 0.0
                         return result
                     
                     # Parse response
-                    data = await response.json()
+                    try:
+                        data = json.loads(response_text)
+                        logger.info(f"GoDaddy API result for {domain}: available={data.get('available', False)}")
+                        
+                        # Update result
+                        result['available'] = data.get('available', False)
+                        result['confidence'] = 0.9  # High confidence for direct API response
+                        result['details'] = {
+                            'price': data.get('price', 0),
+                            'currency': data.get('currency', 'USD'),
+                            'definitive': data.get('definitive', True)
+                        }
+                        
+                        # If the API specifically says the result is not definitive, lower confidence
+                        if not data.get('definitive', True):
+                            result['confidence'] = 0.7
+                            
+                    except json.JSONDecodeError as e:
+                        error_msg = f"Failed to parse GoDaddy API response: {str(e)}"
+                        logger.error(error_msg)
+                        result['error'] = error_msg
+                        result['confidence'] = 0.0
+                        return result
                     
-                    # Update result
-                    result['available'] = data.get('available', False)
-                    result['confidence'] = 0.9  # High confidence for direct API response
-                    result['details'] = {
-                        'price': data.get('price', 0),
-                        'currency': data.get('currency', 'USD'),
-                        'definitive': data.get('definitive', True)
-                    }
-                    
-                    # If the API specifically says the result is not definitive, lower confidence
-                    if not data.get('definitive', True):
-                        result['confidence'] = 0.7
-                    
+        except aiohttp.ClientError as e:
+            error_msg = f"GoDaddy API connection error for {domain}: {str(e)}"
+            logger.error(error_msg)
+            result['error'] = error_msg
+            result['confidence'] = 0.0
         except Exception as e:
             error_msg = f"Error checking domain {domain} via GoDaddy API: {str(e)}"
             logger.error(error_msg)
             result['error'] = error_msg
             result['confidence'] = 0.0
             
+        logger.info(f"Final GoDaddy result for {domain}: {result}")
         return result
 
 
@@ -194,4 +228,5 @@ def create_godaddy_provider() -> Optional[GoDaddyProvider]:
     
     use_production = os.environ.get('GODADDY_USE_PRODUCTION', 'true').lower() == 'true'
     logger.info(f"Creating GoDaddy provider with {'production' if use_production else 'OTE'} environment")
+    logger.info(f"API Key: {api_key[:5]}... API Secret: {api_secret[:5]}...")
     return GoDaddyProvider(api_key, api_secret, use_production)

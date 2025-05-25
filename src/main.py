@@ -1,3 +1,7 @@
+"""
+Main application entry point for the domain availability checker.
+"""
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # DON'T CHANGE THIS !!!
@@ -13,7 +17,7 @@ import logging
 
 # Import our domain checker modules
 from src.domain_checker import DomainChecker, normalize_brand_name, DomainSuggestionGenerator
-from src.registrar_apis import create_godaddy_provider
+from src.browser_providers import create_godaddy_browser_provider
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -29,13 +33,14 @@ DEFAULT_TLDS = ['.com', '.net', '.org', '.io', '.ai', '.com.br']
 # Initialize the domain checker
 domain_checker = DomainChecker()
 
-# Try to add GoDaddy provider if credentials are available
-godaddy_provider = create_godaddy_provider()
-if godaddy_provider:
-    domain_checker.add_provider(godaddy_provider)
-    logger.info("GoDaddy API provider added to domain checker")
-else:
-    logger.warning("GoDaddy API provider not available - using WHOIS only")
+# Add GoDaddy Browser provider
+try:
+    godaddy_browser = create_godaddy_browser_provider(headless=True, timeout=30, max_retries=2)
+    domain_checker.add_provider(godaddy_browser)
+    logger.info("GoDaddy Browser provider added to domain checker")
+except Exception as e:
+    logger.error(f"Failed to add GoDaddy Browser provider: {str(e)}")
+    logger.warning("Domain checker will use WHOIS only")
 
 @app.route('/')
 def index():
@@ -43,99 +48,6 @@ def index():
     # Get the list of active providers
     providers = [p.source_name for p in domain_checker.providers]
     return render_template('index.html', tlds=DEFAULT_TLDS, providers=providers)
-
-@app.route('/check', methods=['POST'])
-def check_domains():
-    """Check domain availability for the provided brand names."""
-    # Get form data
-    brand_names = request.form.get('brand_names', '').strip().split('\n')
-    selected_tlds = request.form.getlist('tlds')
-    
-    if not brand_names or not selected_tlds:
-        return jsonify({'error': 'Please provide brand names and select at least one TLD'}), 400
-    
-    # Clean brand names (remove empty lines and whitespace)
-    brand_names = [name.strip() for name in brand_names if name.strip()]
-    
-    # Initialize progress tracking
-    total_checks = len(brand_names) * len(selected_tlds)
-    current_check = 0
-    
-    # Check domains and get results
-    results = []
-    errors = []
-    
-    for brand_idx, brand in enumerate(brand_names):
-        try:
-            # Send progress update
-            progress_percent = int((brand_idx / len(brand_names)) * 100)
-            yield f"data: {json.dumps({'progress': progress_percent, 'status': f'Processing brand: {brand}'})}\n\n"
-            
-            brand_result = {
-                'brand': brand,
-                'domains': [],
-                'suggestions': []
-            }
-            
-            # Normalize brand name for domain use
-            normalized_brand = normalize_brand_name(brand)
-            
-            # Check each selected TLD
-            for tld_idx, tld in enumerate(selected_tlds):
-                try:
-                    domain = f"{normalized_brand}{tld}"
-                    
-                    # Send progress update for domain check
-                    yield f"data: {json.dumps({'progress': progress_percent, 'status': f'Checking domain: {domain}'})}\n\n"
-                    
-                    # Use the multi-source domain checker
-                    result = asyncio.run(domain_checker.check_domain(domain))
-                    
-                    # Add to results
-                    domain_result = {
-                        'domain': domain,
-                        'available': result['available'],
-                        'confidence': result['confidence'],
-                        'status': result['status'],
-                        'sources': result['sources'],
-                        'conflicting_results': result['conflicting_results']
-                    }
-                    
-                    brand_result['domains'].append(domain_result)
-                    
-                    current_check += 1
-                    
-                except Exception as e:
-                    error_msg = f"Error checking domain {normalized_brand}{tld}: {str(e)}"
-                    errors.append(error_msg)
-                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                    
-                    # Add domain with error status
-                    brand_result['domains'].append({
-                        'domain': f"{normalized_brand}{tld}",
-                        'available': False,
-                        'confidence': 0.0,
-                        'status': 'error',
-                        'error': str(e)
-                    })
-            
-            # Generate suggestions for unavailable domains
-            unavailable_domains = [d for d in brand_result['domains'] if not d.get('available')]
-            if unavailable_domains:
-                yield f"data: {json.dumps({'status': f'Generating suggestions for {brand}'})}\n\n"
-                brand_result['suggestions'] = DomainSuggestionGenerator.generate_suggestions(
-                    normalized_brand, selected_tlds)
-            
-            results.append(brand_result)
-            
-        except Exception as e:
-            error_msg = f"Error processing brand {brand}: {str(e)}"
-            errors.append(error_msg)
-            yield f"data: {json.dumps({'error': error_msg})}\n\n"
-            traceback.print_exc()
-    
-    # Send completion status
-    yield f"data: {json.dumps({'progress': 100, 'status': 'Completed', 'results': results, 'errors': errors})}\n\n"
 
 @app.route('/stream-check', methods=['POST'])
 def stream_check_domains():

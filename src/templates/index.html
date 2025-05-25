@@ -4,115 +4,92 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Domain Availability Checker</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-md-10">
-                <div class="card shadow">
-                    <div class="card-header bg-primary text-white">
-                        <h1 class="text-center mb-0">Domain Availability Checker</h1>
-                    </div>
-                    <div class="card-body">
-                        <div class="sources-info mb-4">
-                            <h5>Active Data Sources:</h5>
-                            <div class="d-flex flex-wrap gap-2">
-                                {% for provider in providers %}
-                                <span class="badge bg-info">{{ provider }}</span>
-                                {% endfor %}
-                            </div>
-                            <div class="small text-muted mt-1">
-                                Multiple sources are checked for higher accuracy. Results show confidence levels based on source agreement.
-                            </div>
-                        </div>
-
-                        <form id="domainForm">
-                            <div class="mb-4">
-                                <label for="brandNames" class="form-label">Enter Brand Names (one per line):</label>
-                                <textarea class="form-control" id="brandNames" name="brand_names" rows="5" placeholder="Enter your brand names here, one per line. Example:&#10;mybrand&#10;coolcompany&#10;awesomeproduct" required></textarea>
-                            </div>
-                            
-                            <div class="mb-4">
-                                <label class="form-label">Select TLDs to check:</label>
-                                <div class="tld-options">
-                                    {% for tld in tlds %}
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="checkbox" name="tlds" id="tld{{ loop.index }}" value="{{ tld }}" checked>
-                                        <label class="form-check-label" for="tld{{ loop.index }}">{{ tld }}</label>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary btn-lg" id="checkButton">
-                                    <span class="spinner-border spinner-border-sm d-none" id="loadingSpinner" role="status" aria-hidden="true"></span>
-                                    Check Domain Availability
-                                </button>
-                            </div>
-                        </form>
-                        
-                        <!-- Progress Tracker -->
-                        <div id="progressContainer" class="mt-4 d-none">
-                            <h5>Progress: <span id="progressStatus">Starting...</span></h5>
-                            <div class="progress mb-3">
-                                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <!-- Error Console -->
-                        <div id="errorConsole" class="mt-4 d-none">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h5 class="text-danger mb-0"><i class="bi bi-exclamation-triangle-fill"></i> Error Console</h5>
-                                <button id="clearErrorsBtn" class="btn btn-sm btn-outline-danger">Clear</button>
-                            </div>
-                            <div id="errorList" class="error-console p-3"></div>
-                        </div>
-                        
-                        <!-- Results Container -->
-                        <div id="resultsContainer" class="mt-5 d-none">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h2 class="mb-0">Results</h2>
-                                <button id="downloadPdfBtn" class="btn btn-success">
-                                    <i class="bi bi-file-earmark-pdf"></i> Download as PDF
-                                </button>
-                            </div>
-                            
-                            <!-- Confidence Legend -->
-                            <div class="confidence-legend mb-4">
-                                <h6>Confidence Indicators:</h6>
-                                <div class="d-flex flex-wrap gap-3">
-                                    <div class="confidence-item">
-                                        <span class="confidence-dot high-confidence"></span>
-                                        <span>High (80-100%)</span>
-                                    </div>
-                                    <div class="confidence-item">
-                                        <span class="confidence-dot medium-confidence"></span>
-                                        <span>Medium (50-79%)</span>
-                                    </div>
-                                    <div class="confidence-item">
-                                        <span class="confidence-dot low-confidence"></span>
-                                        <span>Low (0-49%)</span>
-                                    </div>
-                                    <div class="confidence-item">
-                                        <span class="confidence-dot conflict"></span>
-                                        <span>Source Conflict</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div id="resultsContent"></div>
-                        </div>
-                    </div>
-                </div>
+    <div class="container">
+        <header>
+            <h1>Domain Availability Checker</h1>
+            <p class="subtitle">Check domain availability across multiple sources</p>
+            
+            <!-- Data sources indicator -->
+            <div class="data-sources">
+                <p>Active data sources:</p>
+                <ul>
+                    {% for provider in providers %}
+                    <li class="source-badge">{{ provider }}</li>
+                    {% endfor %}
+                </ul>
             </div>
-        </div>
-    </div>
+        </header>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+        <main>
+            <section class="input-section">
+                <form id="domainForm">
+                    <div class="form-group">
+                        <label for="brandNames">Enter brand names (one per line):</label>
+                        <textarea id="brandNames" name="brand_names" rows="5" placeholder="Enter brand names here..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Select TLDs to check:</label>
+                        <div class="tld-options">
+                            {% for tld in tlds %}
+                            <div class="tld-option">
+                                <input type="checkbox" id="tld{{ loop.index }}" name="tlds" value="{{ tld }}" {% if tld == '.com' %}checked{% endif %}>
+                                <label for="tld{{ loop.index }}">{{ tld }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="checkButton">Check Availability</button>
+                </form>
+            </section>
+            
+            <!-- Progress tracking section -->
+            <section id="progressSection" class="progress-section hidden">
+                <h2>Checking Domains...</h2>
+                <div class="progress-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <p id="progressStatus" class="progress-status">Initializing...</p>
+                
+                <!-- Console log for detailed progress and errors -->
+                <div class="console-container">
+                    <div class="console-header">
+                        <h3>Console Log</h3>
+                        <button id="clearConsole" class="clear-button">Clear</button>
+                    </div>
+                    <div id="consoleLog" class="console-log"></div>
+                </div>
+            </section>
+            
+            <!-- Results section -->
+            <section id="resultsSection" class="results-section hidden">
+                <div class="results-header">
+                    <h2>Domain Availability Results</h2>
+                    <button id="downloadPdfButton" class="download-button">Download as PDF</button>
+                </div>
+                
+                <div id="resultsContainer" class="results-container"></div>
+            </section>
+            
+            <!-- Error display section -->
+            <section id="errorSection" class="error-section hidden">
+                <div class="error-header">
+                    <h3>Errors</h3>
+                    <button id="dismissErrors" class="dismiss-button">Dismiss</button>
+                </div>
+                <ul id="errorList" class="error-list"></ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 Domain Availability Checker</p>
+        </footer>
+    </div>
+    
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
