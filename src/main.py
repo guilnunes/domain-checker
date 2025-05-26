@@ -35,7 +35,7 @@ domain_checker = DomainChecker()
 
 # Add GoDaddy Browser provider
 try:
-    godaddy_browser = create_godaddy_browser_provider(headless=True, timeout=30, max_retries=2)
+    godaddy_browser = create_godaddy_browser_provider(headless=True, timeout=60, max_retries=2)
     domain_checker.add_provider(godaddy_browser)
     logger.info("GoDaddy Browser provider added to domain checker")
 except Exception as e:
